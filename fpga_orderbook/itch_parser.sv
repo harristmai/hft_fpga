@@ -101,48 +101,74 @@ module itch_parser #(
             valid_bytes = 8 - s_empty;
 
           for (int i = 0; i < valid_bytes; i++) begin
-            int g = byte_cnt + i;
+            int byte_pos = byte_cnt + i;
 
-            // TODO: plug in real offsets from ITCH 5.0 spec.
-            // Example layout for "A" (NOT exact; placeholder):
-            //  g 2..9   -> order_id (8B)
-            //  g 10     -> side ('B'/'S')
-            //  g 11..14 -> qty (4B)
-            //  g 15..18 -> price (4B)
+            // ITCH 5.0 Specification Byte Offsets:
+            // Byte 0: Length, Byte 1: Message Type
+            // "A" - Add Order (No MPID): Stock Locate(2-3), Tracking(4-5), Timestamp(6-11),
+            //       Order Reference Number(12-19), Buy/Sell(20), Shares(21-24), Stock(25-32), Price(33-36)
+            // "D" - Order Delete: Stock Locate(2-3), Tracking(4-5), Timestamp(6-11),
+            //       Order Reference Number(12-19)
+            // "X" - Order Cancel: Stock Locate(2-3), Tracking(4-5), Timestamp(6-11),
+            //       Order Reference Number(12-19), Cancelled Shares(19-22)
 
             unique case (type_q)
               "A": begin
-                if (g >= 2 && g < 10) begin
-                  int bit_idx = (g - 2)*8;
+                // Order Reference Number: bytes 12-19 (8 bytes, little-endian)
+                if (byte_pos >= 12 && byte_pos < 20) begin
+                  int bit_idx = (byte_pos - 12)*8;
                   oid_q[bit_idx +: 8] = byte_array[i];
-                end else if (g == 10) begin
+                end 
+                // Buy/Sell Indicator: byte 20
+                else if (byte_pos == 20) begin
                   side_q = (byte_array[i] == "B") ? SIDE_BID : SIDE_ASK;
-                end else if (g >= 11 && g < 15) begin
-                  int bit_idx = (g - 11)*8;
+                end 
+                // Shares: bytes 21-24 (4 bytes, big-endian)
+                else if (byte_pos >= 21 && byte_pos < 25) begin
+                  int bit_idx = (24 - byte_pos)*8;
                   qty_q[bit_idx +: 8] = byte_array[i];
-                end else if (g >= 15 && g < 19) begin
-                  int bit_idx = (g - 15)*8;
+                end 
+                // Price: bytes 33-36 (4 bytes, big-endian)
+                else if (byte_pos >= 33 && byte_pos < 37) begin
+                  int bit_idx = (36 - byte_pos)*8;
                   price_q[bit_idx +: 8] = byte_array[i];
                 end
                 mtype_q = MSG_ADD;
               end
 
               "D": begin
-                if (g >= 2 && g < 10) begin
-                  int bit_idx = (g - 2)*8;
+                // Order Reference Number: bytes 12-19 (8 bytes, little-endian)
+                if (byte_pos >= 12 && byte_pos < 20) begin
+                  int bit_idx = (byte_pos - 12)*8;
                   oid_q[bit_idx +: 8] = byte_array[i];
                 end
                 mtype_q = MSG_CANCEL;
               end
 
-              "X",
+              "X": begin
+                // Order Reference Number: bytes 12-19 (8 bytes, little-endian)
+                if (byte_pos >= 12 && byte_pos < 20) begin
+                  int bit_idx = (byte_pos - 12)*8;
+                  oid_q[bit_idx +: 8] = byte_array[i];
+                end 
+                // Cancelled Shares: bytes 19-22 (4 bytes, big-endian)
+                else if (byte_pos >= 19 && byte_pos < 23) begin
+                  int bit_idx = (22 - byte_pos)*8;
+                  qty_q[bit_idx +: 8] = byte_array[i];
+                end
+                mtype_q = MSG_EXEC;
+              end
+
               "E",
               "C": begin
-                if (g >= 2 && g < 10) begin
-                  int bit_idx = (g - 2)*8;
+                // Order Reference Number: bytes 12-19 (8 bytes, little-endian)
+                if (byte_pos >= 12 && byte_pos < 20) begin
+                  int bit_idx = (byte_pos - 12)*8;
                   oid_q[bit_idx +: 8] = byte_array[i];
-                end else if (g >= 10 && g < 14) begin
-                  int bit_idx = (g - 10)*8;
+                end 
+                // Executed Shares: bytes 19-22 (4 bytes, big-endian)
+                else if (byte_pos >= 19 && byte_pos < 23) begin
+                  int bit_idx = (22 - byte_pos)*8;
                   qty_q[bit_idx +: 8] = byte_array[i];
                 end
                 mtype_q = MSG_EXEC;
